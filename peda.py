@@ -2260,7 +2260,7 @@ class PEDA(object):
         if not out:
             return {}
 
-        p = re.compile("\s*(0x[^-]*)->(0x[^ ]*) at (0x[^:]*):\s*([^ ]*)\s*(.*)")
+        p = re.compile("\s*(0x[^-]*)->(0x[^ ]*) at (.*):\s*([^ ]*)\s*(.*)")
         matches = p.findall(out)
 
         for (start, end, offset, hname, attr) in matches:
@@ -3381,6 +3381,8 @@ class PEDACmd(object):
         if not to_int(count) and count.startswith("/"):
             count = to_int(count[1:])
             count = count * 16 if count else None
+        
+     
 
         bytes_ = peda.dumpmem(address, address+count)
         if bytes_ is None:
@@ -4271,7 +4273,7 @@ class PEDACmd(object):
 
         pc = peda.getreg("pc")
         # display register info
-        msg("[%s]" % "registers".center(78, "-"), "blue")
+        msg("\033[2J\033[0;0H [%s]" % "registers".center(78, "-"), "blue")
         self.xinfo("register")
 
         return
@@ -4367,6 +4369,66 @@ class PEDACmd(object):
             msg("Invalid $SP address: 0x%x" % sp, "red")
 
         return
+        
+    @msg.bufferize
+    def context_mem(self, *arg):
+        """
+        Display memory of current context
+        Usage:
+            MYNAME [linecount]
+        """
+        def ascii_char(ch):
+            if ord(ch) >= 0x20 and ord(ch) < 0x7e:
+                return chr(ord(ch))  # Ensure we return a str
+            else:
+                return "."
+
+        (address,count,) = normalize_argv(arg, 2)
+        
+        if peda.is_address(address):
+            config.Option.set("context_mem",address)
+        
+        opt = config.Option.get("context_mem")
+                
+        if opt == 'sp':
+            address = peda.getreg(opt)
+        else:
+            address = opt
+
+        if count is None:
+            count = 128
+
+
+        if not self._is_running():
+            return
+        
+        text = blue("[%s]" % "memory".center(78, "-"))
+        msg(text)
+        
+        #sp = peda.getreg("sp")
+        #address = sp
+
+        if peda.is_address(address):
+            bytes_ = peda.dumpmem(address, address+count)
+            if bytes_ is None:
+                msg("cannot retrieve memory content",'red')
+            else:
+                linelen = 16 # display 16-bytes per line
+                i = 0
+                text = ""
+                while bytes_:
+                    buf = bytes_[:linelen]
+                    hexbytes = " ".join(["%02x" % ord(c) for c in bytes_iterator(buf)])
+                    asciibytes = "".join([ascii_char(c) for c in bytes_iterator(buf)])
+                    text += '%s : %s  %s\n' % (blue(to_address(address+i*linelen)), hexbytes.ljust(linelen*3), asciibytes)
+                    bytes_ = bytes_[linelen:]
+                    i += 1
+                msg(text,'red')
+
+        else:
+            msg("Invalid $SP address: 0x%x" % sp, "red")
+
+        return
 
     def context(self, *arg):
         """
@@ -4382,8 +4444,9 @@ class PEDACmd(object):
         if opt is None:
             opt = config.Option.get("context")
         if opt == "all":
-            opt = "register,code,stack"
+            opt = "register,code,memory"
 
+        
         opt = opt.replace(" ", "").split(",")
 
         if not opt:
@@ -4391,10 +4454,6 @@ class PEDACmd(object):
 
         if not self._is_running():
             return
-
-        clearscr = config.Option.get("clearscr")
-        if clearscr == "on":
-            clearscreen()
 
         status = peda.get_status()
         # display registers
@@ -4408,6 +4467,10 @@ class PEDACmd(object):
         # display stack content, forced in case SIGSEGV
         if "stack" in opt or "SIGSEGV" in status:
             self.context_stack(count)
+        
+        if "memory" in opt:
+            self.context_mem()
+
         msg("[%s]" % ("-"*78), "blue")
         msg("Legend: %s, %s, %s, value" % (red("code"), blue("data"), green("rodata")))
 
