@@ -3043,6 +3043,7 @@ class PEDACmd(object):
     def __init__(self):
         # list of all available commands
         self.commands = [c for c in dir(self) if callable(getattr(self, c)) and not c.startswith("_")]
+        self.mem_dumped = ""
 
     ##################
     #   Misc Utils   #
@@ -4382,6 +4383,14 @@ class PEDACmd(object):
                 return chr(ord(ch))  # Ensure we return a str
             else:
                 return "."
+        
+        def compare_text(old,new):
+            ret = []
+            if len(old) == len(new):
+                for i in range(len(old)):
+                    if old[i] != new[i]:
+                        ret.append(i)
+            return ret
 
         (address,count,) = normalize_argv(arg, 2)
         
@@ -4413,18 +4422,35 @@ class PEDACmd(object):
             if bytes_ is None:
                 msg("cannot retrieve memory content",'red')
             else:
+
+                diff = compare_text(self.mem_dumped,bytes_)
+
+                self.mem_dumped = bytes_
+                
                 linelen = 16 # display 16-bytes per line
                 i = 0
                 text = ""
                 while bytes_:
                     buf = bytes_[:linelen]
-                    hexbytes = " ".join(["%02x" % ord(c) for c in bytes_iterator(buf)])
-                    asciibytes = "".join([ascii_char(c) for c in bytes_iterator(buf)])
+                    hexbytes = ["%02x" % ord(c) for c in bytes_iterator(buf)]
+                    asciibytes = [ascii_char(c) for c in bytes_iterator(buf)]
+
+                    for j in diff:
+                        if int(j / linelen) == i:
+                            hexbytes[j%linelen] = red(hexbytes[j%linelen])
+                            asciibytes[j%linelen] = red(asciibytes[j%linelen])
+
+                    hexbytes = " ".join(hexbytes)
+                    asciibytes = "".join(asciibytes)
+
                     text += '%s : %s  %s\n' % (blue(to_address(address+i*linelen)), hexbytes.ljust(linelen*3), asciibytes)
                     bytes_ = bytes_[linelen:]
                     i += 1
-                msg(text,'red')
 
+                msg(text,"red")
+                
+                
+                
         else:
             msg("Invalid $SP address: 0x%x" % sp, "red")
 
